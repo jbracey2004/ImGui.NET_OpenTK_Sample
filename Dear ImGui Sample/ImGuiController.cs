@@ -44,7 +44,13 @@ namespace Dear_ImGui_Sample
             var io = ImGui.GetIO();
             io.Fonts.AddFontDefault();
 
+            io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
             io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
+            io.BackendFlags |= ImGuiBackendFlags.HasMouseCursors;
+            io.BackendFlags |= ImGuiBackendFlags.HasSetMousePos;
+            io.BackendFlags |= ImGuiBackendFlags.HasMouseHoveredViewport;
+            io.ConfigDockingTransparentPayload = true;
+            io.ConfigWindowsResizeFromEdges = true;
 
             CreateDeviceResources();
             SetKeyMappings();
@@ -68,64 +74,64 @@ namespace Dear_ImGui_Sample
 
         public void CreateDeviceResources()
         {
-            Util.CreateVertexArray("ImGui", out _vertexArray);
+            _vertexBufferSize = 2000;
+            _indexBufferSize = 200;
 
-            _vertexBufferSize = 10000;
-            _indexBufferSize = 2000;
-
-            Util.CreateVertexBuffer("ImGui", out _vertexBuffer);
-            Util.CreateElementBuffer("ImGui", out _indexBuffer);
-            GL.NamedBufferData(_vertexBuffer, _vertexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-            GL.NamedBufferData(_indexBuffer, _indexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+            _vertexArray = GL.GenVertexArray();
+            _vertexBuffer = GL.GenBuffer();
+            _indexBuffer = GL.GenBuffer();
+            Util.CheckGLError("ImGui setup - Create Buffers");
+            GL.BindVertexArray(_vertexArray);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
+            Util.CheckGLError("ImGui setup - Bind Buffers");
+            GL.BufferData(BufferTarget.ArrayBuffer, _vertexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, _indexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+            Util.CheckGLError("ImGui setup - Init Buffers");
 
             RecreateFontDeviceTexture();
 
-            string VertexSource = @"#version 330 core
-
-uniform mat4 projection_matrix;
-
-in vec2 in_position;
-in vec2 in_texCoord;
-in vec4 in_color;
-
-out vec4 color;
-out vec2 texCoord;
-
-void main()
-{
-    gl_Position = projection_matrix * vec4(in_position, 0, 1);
-    color = in_color;
-    texCoord = in_texCoord;
-}";
-            string FragmentSource = @"#version 330 core
-
-uniform sampler2D in_fontTexture;
-
-in vec4 color;
-in vec2 texCoord;
-
-out vec4 outputColor;
-
-void main()
-{
-    outputColor = color * texture(in_fontTexture, texCoord);
-}";
+            string VertexSource = "#version 130\n" +
+                "uniform mat4 projection_matrix;\n" +
+                "in vec2 in_position;\n" +
+                "in vec2 in_texCoord;\n" +
+                "in vec4 in_color;\n" +
+                "out vec4 color;\n" +
+                "out vec2 texCoord;\n" +
+                "void main()\n" +
+                "{\n" +
+                "   gl_Position = projection_matrix * vec4(in_position, 0, 1);\n" +
+                "   color = in_color;\n" +
+                "   texCoord = in_texCoord;\n" +
+                "}";
+            string FragmentSource = "#version 130\n" +
+                "uniform sampler2D in_fontTexture;\n" +
+                "in vec4 color;\n" +
+                "in vec2 texCoord;\n" +
+                "out vec4 outputColor;\n" +
+                "void main()\n" +
+                "{\n" +
+                "   outputColor = color * texture(in_fontTexture, texCoord); \n" +
+                "}";
             _shader = new Shader("ImGui", VertexSource, FragmentSource);
+            _shader.UseShader();
+            Util.CheckGLError("ImGui setup - Create Shader");
 
-            GL.VertexArrayVertexBuffer(_vertexArray, 0, _vertexBuffer, IntPtr.Zero, Unsafe.SizeOf<ImDrawVert>());
-            GL.VertexArrayElementBuffer(_vertexArray, _indexBuffer);
+            int attrLoc_Pos = GL.GetAttribLocation(_shader.Program, "in_position");
+            int attrLoc_UV = GL.GetAttribLocation(_shader.Program, "in_texCoord");
+            int attrLoc_Col = GL.GetAttribLocation(_shader.Program, "in_color");
+            Util.CheckGLError("ImGui setup - Get Attribute Locations");
 
-            GL.EnableVertexArrayAttrib(_vertexArray, 0);
-            GL.VertexArrayAttribBinding(_vertexArray, 0, 0);
-            GL.VertexArrayAttribFormat(_vertexArray, 0, 2, VertexAttribType.Float, false, 0);
+            GL.EnableVertexArrayAttrib(_vertexArray, attrLoc_Pos);
+            GL.EnableVertexArrayAttrib(_vertexArray, attrLoc_UV);
+            GL.EnableVertexArrayAttrib(_vertexArray, attrLoc_Col);
+            GL.EnableVertexAttribArray(_vertexArray);
+            Util.CheckGLError("ImGui setup - Enable Attribute Location Binding");
 
-            GL.EnableVertexArrayAttrib(_vertexArray, 1);
-            GL.VertexArrayAttribBinding(_vertexArray, 1, 0);
-            GL.VertexArrayAttribFormat(_vertexArray, 1, 2, VertexAttribType.Float, false, 8);
-
-            GL.EnableVertexArrayAttrib(_vertexArray, 2);
-            GL.VertexArrayAttribBinding(_vertexArray, 2, 0);
-            GL.VertexArrayAttribFormat(_vertexArray, 2, 4, VertexAttribType.UnsignedByte, true, 16);
+            GL.VertexAttribPointer(attrLoc_Pos, 2, VertexAttribPointerType.Float, false, Unsafe.SizeOf<ImDrawVert>(), 0);
+            GL.VertexAttribPointer(attrLoc_UV, 2, VertexAttribPointerType.Float, false, Unsafe.SizeOf<ImDrawVert>(), 8);
+            GL.VertexAttribPointer(attrLoc_Col, 4, VertexAttribPointerType.UnsignedByte, true, Unsafe.SizeOf<ImDrawVert>(), 16);
+            Util.CheckGLError("ImGui setup - Bind Attribute Buffers");
 
             Util.CheckGLError("End of ImGui setup");
         }
@@ -268,53 +274,32 @@ void main()
 
         private void RenderImDrawData(ImDrawDataPtr draw_data)
         {
-            uint vertexOffsetInVertices = 0;
-            uint indexOffsetInElements = 0;
-
             if (draw_data.CmdListsCount == 0)
             {
                 return;
             }
 
-            uint totalVBSize = (uint)(draw_data.TotalVtxCount * Unsafe.SizeOf<ImDrawVert>());
-            if (totalVBSize > _vertexBufferSize)
+            int VrtRequiredSize = draw_data.TotalVtxCount * Unsafe.SizeOf<ImDrawVert>();
+            if (VrtRequiredSize > _vertexBufferSize)
             {
-                int newSize = (int)Math.Max(_vertexBufferSize * 1.5f, totalVBSize);
-                GL.NamedBufferData(_vertexBuffer, newSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-                _vertexBufferSize = newSize;
-
-                Console.WriteLine($"Resized vertex buffer to new size {_vertexBufferSize}");
+                _vertexBufferSize = Math.Max((int)(VrtRequiredSize * 1.1f), (int)(_vertexBufferSize * 1.5f));
+                GL.BufferData(BufferTarget.ArrayBuffer, _vertexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+                Util.CheckGLError("Adjusted Vertex Buffer Size");
+                Console.WriteLine($"VertexArray BufferSize {VrtRequiredSize}. VertexBuffer Resized to {_vertexBufferSize}");
             }
-
-            uint totalIBSize = (uint)(draw_data.TotalIdxCount * sizeof(ushort));
-            if (totalIBSize > _indexBufferSize)
+            int IdxRequiredSize = draw_data.TotalIdxCount * sizeof(ushort);
+            if (IdxRequiredSize > _indexBufferSize)
             {
-                int newSize = (int)Math.Max(_indexBufferSize * 1.5f, totalIBSize);
-                GL.NamedBufferData(_indexBuffer, newSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-                _indexBufferSize = newSize;
-
-                Console.WriteLine($"Resized index buffer to new size {_indexBufferSize}");
-            }
-
-
-            for (int i = 0; i < draw_data.CmdListsCount; i++)
-            {
-                ImDrawListPtr cmd_list = draw_data.CmdListsRange[i];
-
-                GL.NamedBufferSubData(_vertexBuffer, (IntPtr)(vertexOffsetInVertices * Unsafe.SizeOf<ImDrawVert>()), cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data);
-                Util.CheckGLError($"Data Vert {i}");
-                GL.NamedBufferSubData(_indexBuffer, (IntPtr)(indexOffsetInElements * sizeof(ushort)), cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data);
-
-                Util.CheckGLError($"Data Idx {i}");
-
-                vertexOffsetInVertices += (uint)cmd_list.VtxBuffer.Size;
-                indexOffsetInElements += (uint)cmd_list.IdxBuffer.Size;
+                _indexBufferSize = Math.Max((int)(IdxRequiredSize * 1.1f), (int)(_indexBufferSize * 1.5f));
+                GL.BufferData(BufferTarget.ElementArrayBuffer, _indexBufferSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
+                Util.CheckGLError("Adjusted Index Buffer Size");
+                Console.WriteLine($"IndexArray BufferSize {IdxRequiredSize}. VertexBuffer Resized to {_indexBufferSize}");
             }
 
             // Setup orthographic projection matrix into our constant buffer
             ImGuiIOPtr io = ImGui.GetIO();
             Matrix4 mvp = Matrix4.CreateOrthographicOffCenter(
-                -1.0f,
+                0.0f,
                 io.DisplaySize.X,
                 io.DisplaySize.Y,
                 0.0f,
@@ -322,12 +307,9 @@ void main()
                 1.0f);
 
             _shader.UseShader();
+            Util.CheckGLError("Set Shader");
             GL.ProgramUniformMatrix4(_shader.Program, _shader.GetUniformLocation("projection_matrix"), false, ref mvp);
             GL.ProgramUniform1(_shader.Program, _shader.GetUniformLocation("in_fontTexture"), 0);
-            Util.CheckGLError("Projection");
-
-            GL.BindVertexArray(_vertexArray);
-            Util.CheckGLError("VAO");
 
             draw_data.ScaleClipRects(io.DisplayFramebufferScale);
 
@@ -337,6 +319,7 @@ void main()
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
             GL.Disable(EnableCap.CullFace);
             GL.Disable(EnableCap.DepthTest);
+            Util.CheckGLError("ImGui Render - Init Render State");
 
             // Render command lists
             int vtx_offset = 0;
@@ -344,6 +327,12 @@ void main()
             for (int n = 0; n < draw_data.CmdListsCount; n++)
             {
                 ImDrawListPtr cmd_list = draw_data.CmdListsRange[n];
+                GL.BufferSubData(BufferTarget.ArrayBuffer, (IntPtr)(0), cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data);
+                //GL.BufferData(BufferTarget.ArrayBuffer, cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data, BufferUsageHint.StreamDraw);
+                Util.CheckGLError($"Data Vert {n}");
+                GL.BufferSubData(BufferTarget.ElementArrayBuffer, (IntPtr)(0), cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data);
+                //GL.BufferData(BufferTarget.ElementArrayBuffer, cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data, BufferUsageHint.StreamDraw);
+                Util.CheckGLError($"Data Idx {n}");
                 for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
                 {
                     ImDrawCmdPtr pcmd = cmd_list.CmdBuffer[cmd_i];
@@ -362,10 +351,16 @@ void main()
                         GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
                         Util.CheckGLError("Scissor");
 
-                        GL.DrawElementsBaseVertex(PrimitiveType.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (IntPtr)(idx_offset * sizeof(ushort)), vtx_offset);
+                        if ((io.BackendFlags & ImGuiBackendFlags.RendererHasVtxOffset) > 0)
+                        {
+                            GL.DrawElementsBaseVertex(PrimitiveType.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (IntPtr)(pcmd.IdxOffset * sizeof(ushort)), (int)pcmd.VtxOffset);
+                        }
+                        else
+                        {
+                            GL.DrawElements(BeginMode.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (int)pcmd.IdxOffset * sizeof(ushort));
+                        }
                         Util.CheckGLError("Draw");
                     }
-
                     idx_offset += (int)pcmd.ElemCount;
                 }
                 vtx_offset += cmd_list.VtxBuffer.Size;
