@@ -15,7 +15,7 @@ namespace Dear_ImGui_Sample
     {
         ImGuiController _controller;
 
-        public Window(GraphicsMode gMode) : base(1600, 900, gMode,
+        public Window(GraphicsMode gMode) : base(1200, 720, gMode,
                                     "ImGui Sample!",
                                     GameWindowFlags.Default,
                                     DisplayDevice.Default,

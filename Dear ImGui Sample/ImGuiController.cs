@@ -1,13 +1,41 @@
 ﻿using ImGuiNET;
-using OpenTK;
+using System.Numerics;
 using OpenTK.Graphics.OpenGL4;
 using OpenTK.Input;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-
 namespace Dear_ImGui_Sample
 {
+    public class clsMouseState
+    {
+        public Vector2 Pos { get; set; }
+        public Vector2 Scroll { get; set; }
+        public bool[] Buttons { get; set; }
+        public clsMouseState()
+        {
+            Pos = new Vector2();
+            Scroll = new Vector2();
+            Buttons = new bool[] { false, false, false };
+        }
+        public clsMouseState(MouseState refState)
+        {
+            Pos = new Vector2(refState.X, refState.Y);
+            Scroll = new Vector2(refState.Scroll.X, refState.Scroll.Y);
+            Buttons = new bool[] { (int)refState.LeftButton == 1,
+                                   (int)refState.RightButton == 1,
+                                   (int)refState.MiddleButton == 1 };
+        }
+    }
+    public class clsInputState
+    {
+        public clsMouseState MouseState { get; set; }
+        public clsMouseState PrevMouseState { get; set; }
+        public bool[] KeyboardState { get; set; }
+        public bool[] PrevKeyboardState { get; set; }
+        public string InputChars { get; set; } = "";
+        public string PrevInputChars { get; set; } = "";
+    }
     /// <summary>
     /// A modified version of Veldrid.ImGui's ImGuiRenderer.
     /// Manages input for ImGui and handles rendering ImGui's DrawLists with Veldrid.
@@ -172,7 +200,7 @@ namespace Dear_ImGui_Sample
         /// <summary>
         /// Updates ImGui input and IO configuration state.
         /// </summary>
-        public void Update(GameWindow wnd, float deltaSeconds)
+        public void Update(OpenTK.GameWindow wnd, float deltaSeconds)
         {
             if (_frameBegun)
             {
@@ -204,7 +232,7 @@ namespace Dear_ImGui_Sample
         KeyboardState PrevKeyboardState;
         readonly List<char> PressedChars = new List<char>();
 
-        private void UpdateImGuiInput(GameWindow wnd)
+        private void UpdateImGuiInput(OpenTK.GameWindow wnd)
         {
             ImGuiIOPtr io = ImGui.GetIO();
 
@@ -298,7 +326,7 @@ namespace Dear_ImGui_Sample
 
             // Setup orthographic projection matrix into our constant buffer
             ImGuiIOPtr io = ImGui.GetIO();
-            Matrix4 mvp = Matrix4.CreateOrthographicOffCenter(
+            OpenTK.Matrix4 mvp = OpenTK.Matrix4.CreateOrthographicOffCenter(
                 0.0f,
                 io.DisplaySize.X,
                 io.DisplaySize.Y,
@@ -327,10 +355,10 @@ namespace Dear_ImGui_Sample
             for (int n = 0; n < draw_data.CmdListsCount; n++)
             {
                 ImDrawListPtr cmd_list = draw_data.CmdListsRange[n];
-                GL.BufferSubData(BufferTarget.ArrayBuffer, (IntPtr)(0), cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data);
+                GL.BufferSubData(BufferTarget.ArrayBuffer, (IntPtr)(vtx_offset * Unsafe.SizeOf<ImDrawVert>()), cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data);
                 //GL.BufferData(BufferTarget.ArrayBuffer, cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data, BufferUsageHint.StreamDraw);
                 Util.CheckGLError($"Data Vert {n}");
-                GL.BufferSubData(BufferTarget.ElementArrayBuffer, (IntPtr)(0), cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data);
+                GL.BufferSubData(BufferTarget.ElementArrayBuffer, (IntPtr)(idx_offset * sizeof(ushort)), cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data);
                 //GL.BufferData(BufferTarget.ElementArrayBuffer, cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data, BufferUsageHint.StreamDraw);
                 Util.CheckGLError($"Data Idx {n}");
                 for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
@@ -353,16 +381,16 @@ namespace Dear_ImGui_Sample
 
                         if ((io.BackendFlags & ImGuiBackendFlags.RendererHasVtxOffset) > 0)
                         {
-                            GL.DrawElementsBaseVertex(PrimitiveType.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (IntPtr)(pcmd.IdxOffset * sizeof(ushort)), (int)pcmd.VtxOffset);
+                            GL.DrawElementsBaseVertex(PrimitiveType.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (IntPtr)((pcmd.IdxOffset + idx_offset) * sizeof(ushort)), (int)pcmd.VtxOffset + vtx_offset);
                         }
                         else
                         {
-                            GL.DrawElements(BeginMode.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (int)pcmd.IdxOffset * sizeof(ushort));
+                            GL.DrawElements(BeginMode.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (int)(pcmd.IdxOffset + idx_offset) * sizeof(ushort));
                         }
                         Util.CheckGLError("Draw");
                     }
-                    idx_offset += (int)pcmd.ElemCount;
                 }
+                idx_offset += cmd_list.IdxBuffer.Size;
                 vtx_offset += cmd_list.VtxBuffer.Size;
             }
 
