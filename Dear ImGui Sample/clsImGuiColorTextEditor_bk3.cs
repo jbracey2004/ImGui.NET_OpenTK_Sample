@@ -11,8 +11,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Dear_ImGui_Sample;
 using ImGuiNET;
-using OpenTK.Graphics.OpenGL;
-
+using System.Numerics;
 namespace WinOpenTK_ImGUI
 {
 	public class infoLine
@@ -23,9 +22,12 @@ namespace WinOpenTK_ImGUI
 		public uint PositionStart { get; set; }
 		public uint PositionEnd { get; set; }
 		public uint ValueLength { get => (uint)Value.Length; }
+		public uint LineLength { get => (uint)Math.Min(Value.Length, PositionEnd - PositionStart + 1); }
+		public string LineValue { get => Value.Substring(0, (int)LineLength); }
+		public static implicit operator string(infoLine ln) => ln.LineValue;
 		public override string ToString()
 		{
-			return $"{LineIndex}{((LineWrapIndex >= 0)?(", " + LineWrapIndex.ToString()):(""))}: [{PositionStart}, {PositionEnd}] \"{@Value}\"";
+			return $"{LineIndex}{((LineWrapIndex >= 0)?(", " + LineWrapIndex.ToString()):(""))}: [{PositionStart}, {PositionEnd}] \"{LineValue}\"";
 		}
 	}
 	class clsImGuiColorTextEditor
@@ -61,130 +63,104 @@ namespace WinOpenTK_ImGUI
 		}
 		public void UpdateLines()
 		{
-			Lines = GetLines(ref strText, WordWrap);
+			Lines = GetLines(strText, WordWrap);
 		}
-		public static infoLine[] GetLines(ref string strText, bool bolWordWrap)
+		public static infoLine[] GetLines(string strText, bool bolWordWrap)
 		{
 			List<infoLine> ret = new List<infoLine>();
 			ImFontPtr font = ImGui.GetFont();
 			float lineWidth = ImGui.GetWindowContentRegionWidth() - font.FallbackAdvanceX * 2f;
-			strText = strText.Replace("\v", "");
-			int idxLineEndToken = 0;
-			int idxLineStToken = 0;
+			MatchCollection matches = Regex.Matches(strText, @"(?<Line>.*)?(?<EndLine>(\r\n|\r|\n))?");
 			int intLineNumber = 0;
-			while (idxLineStToken < strText.Length)
+			foreach (Match itm in matches)
 			{
-				int[] aryIdxTokens = new int[] { strText.IndexOf("\r\n", idxLineStToken),
-												 strText.IndexOf("\r", idxLineStToken), 
-												 strText.IndexOf("\n", idxLineStToken) };
-				idxLineEndToken = aryIdxTokens.Aggregate(strText.Length - 1, (idxRet, idxItm) => ((idxItm != -1) ? (Math.Min(idxRet, idxItm)) : (idxRet)));
-				if (idxLineEndToken == aryIdxTokens[0]) idxLineEndToken++;
-				string strItm = strText.Substring(idxLineStToken, Math.Min(strText.Length, idxLineEndToken - idxLineStToken + 1));
-				if (bolWordWrap)
+				Group grp = itm.Groups["Line"];
+				Group grpEnd = itm.Groups["EndLine"];
+				if (grp != null)
 				{
-					float linePos = 0f;
-					string strLine = "";
-					int lineIndexStart = 0;
-					int lineIndex;
-					int intLineWrapNumber = 0;
-					for (lineIndex = 0; lineIndex < strItm.Length; lineIndex++)
+					if (bolWordWrap)
 					{
-						char c = strItm[lineIndex];
-						strLine += c;
-						linePos += font.GetCharAdvance(c);
-						if (linePos >= lineWidth)
+						float linePos = 0f;
+						string strLine = "";
+						string strLineText = "";
+						int lineIndexStart = 0;
+						int lineIndex;
+						int intLineWrapNumber = 0;
+						for (lineIndex = 0; lineIndex < itm.Value.Length; lineIndex++)
 						{
-							strLine += "\v";
-							strItm = strItm.Insert(lineIndex + 1, "\v");
-							strText = strText.Insert(idxLineStToken + lineIndex + 1, "\v");
-							lineIndex++;
-							idxLineEndToken++;
+							char c = itm.Value[lineIndex];
+							strLine += c;
+							if (c != '\r' && c != '\n') strLineText += c;
+							linePos += font.GetCharAdvance(c);
+							if (linePos >= lineWidth)
+							{
+								ret.Add(new infoLine()
+								{
+									Value = strLine + '\r',
+									LineIndex = intLineNumber,
+									LineWrapIndex = intLineWrapNumber,
+									PositionStart = (uint)(grp.Index + lineIndexStart),
+									PositionEnd = (uint)(grp.Index + lineIndexStart + Math.Max(0, strLineText.Length - 1))
+								});
+								lineIndexStart = lineIndex + 1;
+								strLine = "";
+								strLineText = "";
+								linePos = 0f;
+								intLineWrapNumber++;
+							}
+						}
+						if (strLine.Length > 0)
+						{
 							ret.Add(new infoLine()
 							{
 								Value = strLine,
 								LineIndex = intLineNumber,
-								LineWrapIndex = intLineWrapNumber,
-								PositionStart = (uint)(idxLineStToken + lineIndexStart),
-								PositionEnd = (uint)(idxLineStToken + lineIndexStart + Math.Max(0, strLine.Length - 1))
+								LineWrapIndex = (intLineWrapNumber > 0)?intLineWrapNumber:-1,
+								PositionStart = (uint)(grp.Index + lineIndexStart),
+								PositionEnd = (uint)(grp.Index + lineIndexStart + Math.Max(0, strLineText.Length - 1))
 							});
-							lineIndexStart = lineIndex + 1;
-							strLine = "";
-							linePos = 0f;
-							intLineWrapNumber++;
+						}
+						else
+						{
+							ret.Add(new infoLine()
+							{
+								Value = "",
+								LineIndex = intLineNumber,
+								LineWrapIndex = -1,
+								PositionStart = (uint)(grp.Index + lineIndexStart),
+								PositionEnd = (uint)(grp.Index + lineIndexStart)
+							});
 						}
 					}
-					if (strLine.Length > 0)
-					{
-						ret.Add(new infoLine()
-						{
-							Value = strLine,
-							LineIndex = intLineNumber,
-							LineWrapIndex = (intLineWrapNumber > 0) ? intLineWrapNumber : -1,
-							PositionStart = (uint)(idxLineStToken + lineIndexStart),
-							PositionEnd = (uint)(idxLineStToken + lineIndexStart + Math.Max(0, strLine.Length - 1))
-						});
-					}
 					else
 					{
-						ret.Add(new infoLine()
+						if (itm.Value.Length > 0)
 						{
-							Value = "",
-							LineIndex = intLineNumber,
-							LineWrapIndex = -1,
-							PositionStart = (uint)(idxLineStToken + lineIndexStart),
-							PositionEnd = (uint)(idxLineStToken + lineIndexStart)
-						});
-					}
-				}
-				else
-				{
-					if (strItm.Length > 0)
-					{
-						ret.Add(new infoLine()
+							ret.Add(new infoLine()
+							{
+								Value = itm.Value,
+								LineIndex = intLineNumber,
+								LineWrapIndex = -1,
+								PositionStart = (uint)grp.Index,
+								PositionEnd = (uint)(grp.Index + Math.Max(0, grp.Length - 1))
+							});
+						}
+						else
 						{
-							Value = strItm,
-							LineIndex = intLineNumber,
-							LineWrapIndex = -1,
-							PositionStart = (uint)idxLineStToken,
-							PositionEnd = (uint)(idxLineStToken + Math.Max(0, strItm.Length - 1))
-						});
-					}
-					else
-					{
-						ret.Add(new infoLine()
-						{
-							Value = "",
-							LineIndex = intLineNumber,
-							LineWrapIndex = -1,
-							PositionStart = (uint)idxLineStToken,
-							PositionEnd = (uint)(idxLineStToken)
-						});
+							ret.Add(new infoLine()
+							{
+								Value = "",
+								LineIndex = intLineNumber,
+								LineWrapIndex = -1,
+								PositionStart = (uint)grp.Index,
+								PositionEnd = (uint)(grp.Index)
+							});
+						}
 					}
 				}
 				intLineNumber++;
-				if(!Array.TrueForAll(aryIdxTokens, itm => itm == -1) && idxLineEndToken >= strText.Length - 1)
-				{
-					ret.Add(new infoLine()
-					{
-						Value = "",
-						LineIndex = 0,
-						LineWrapIndex = -1,
-						PositionStart = (uint)idxLineStToken,
-						PositionEnd = (uint)(idxLineEndToken)
-					});
-				}
-				idxLineStToken = idxLineEndToken + 1;
-			}
-			if(idxLineStToken <= idxLineEndToken)
-			{
-				ret.Add(new infoLine()
-				{
-					Value = "",
-					LineIndex = 0,
-					LineWrapIndex = -1,
-					PositionStart = (uint)idxLineStToken,
-					PositionEnd = (uint)(idxLineEndToken)
-				});
+				if (grpEnd == null) break;
+				if (!grpEnd.Success) break;
 			}
 			return ret.ToArray();
 		}
@@ -228,7 +204,7 @@ namespace WinOpenTK_ImGUI
 						else
 						{
 							retIdx = aryLines[itr].PositionEnd + 1;
-							ret = new Point((int)aryLines[aryLines.Length - 1].ValueLength, itr);
+							ret = new Point((int)aryLines[aryLines.Length - 1].LineLength, itr);
 						}
 						
 					}
@@ -241,10 +217,10 @@ namespace WinOpenTK_ImGUI
 			if (pos.X < 0) { pos.Y--; }
 			if (pos.Y < 0) pos.Y = 0;
 			if (pos.Y > aryLines.Length - 1) { pos.Y = aryLines.Length - 1; }
-			if (pos.X < 0) pos.X += (int)aryLines[pos.Y].ValueLength;
-			if (pos.X > aryLines[pos.Y].ValueLength) { pos.Y++; }
+			if (pos.X < 0) pos.X += (int)aryLines[pos.Y].LineLength;
+			if (pos.X > aryLines[pos.Y].LineLength) { pos.Y++; }
 			if (pos.Y > aryLines.Length - 1) { pos.Y = aryLines.Length - 1; }
-			if (pos.X > aryLines[pos.Y].ValueLength) pos.X -= (int)aryLines[pos.Y].ValueLength;
+			if (pos.X > aryLines[pos.Y].LineLength) pos.X -= (int)aryLines[pos.Y].LineLength;
 			return (uint)(aryLines[pos.Y].PositionStart + pos.X);
 		}
 		public static Vector2 GetPositionFromCursorPos(infoLine[] aryLines, Point pos)
@@ -333,7 +309,7 @@ namespace WinOpenTK_ImGUI
 		}
 		public Size CharDimensions
 		{
-			get => new Size(Lines.Aggregate(0, (cnt, itm) => Math.Max((int)itm.ValueLength, cnt)), Lines.Length);
+			get => new Size(Lines.Aggregate(0, (cnt, itm) => Math.Max((int)itm.LineLength, cnt)), Lines.Length);
 		}
 		public Vector2 ContentDimensions
 		{
@@ -342,7 +318,7 @@ namespace WinOpenTK_ImGUI
 				ImFontPtr font = ImGui.GetFont();
 				return new Vector2(
 					Lines.Aggregate(0f, (cnt, itm) => Math.Max(
-						itm.Value.Aggregate(0f, (llen, ch) => llen + font.GetCharAdvance(ch)), cnt)), 
+						itm.LineValue.Aggregate(0f, (llen, ch) => llen + font.GetCharAdvance(ch)), cnt)), 
 						Lines.Length * ImGui.GetTextLineHeightWithSpacing()
 				);
 			}
@@ -386,7 +362,7 @@ namespace WinOpenTK_ImGUI
 			{
 				Point locMouseContent = GetCursorLocationFromPos(Lines, posMouseContent);
 				locMouseContent.Y = Math.Min(Lines.Length - 1, locMouseContent.Y);
-				locMouseContent.X = Math.Min((int)Lines[locMouseContent.Y].ValueLength,  locMouseContent.X);
+				locMouseContent.X = Math.Min((int)Lines[locMouseContent.Y].LineLength,  locMouseContent.X);
 				uint intMouseContent; intMouseContent = GetCursorPositionFromLocation(Lines, locMouseContent);
 				if (posMouse.X >= posWindow.X && posMouse.X <= endWindow.X &&
 				   posMouse.Y >= posWindow.Y && posMouse.Y <= endWindow.Y)
@@ -583,7 +559,7 @@ namespace WinOpenTK_ImGUI
 			uint colorSel = ImGui.ColorConvertFloat4ToU32(SelectionColor());
 			for (int itrLine = 0; itrLine < arySelectedLines.Length; itrLine++)
 			{
-				string strSelected = arySelectedLines[itrLine].Value;
+				string strSelected = arySelectedLines[itrLine].LineValue;
 				uint intStart = arySelectedLines[itrLine].PositionStart;
 				uint intEnd = arySelectedLines[itrLine].PositionEnd;
 				Point locLine = GetLocationFromCursorPos(aryLines, intStart).Loc;
@@ -617,9 +593,6 @@ namespace WinOpenTK_ImGUI
 							posMove.X = fontCurrent.GetCharAdvance(charItm);
 							switch (charItm)
 							{
-								case '\v':
-									if (ShowWhiteSpace) draw.AddText(fontCurrent, fontCurrent.FontSize * 0.5f, posScr, intColorWhitespace, "LW");
-									break;
 								case '\r':
 									if (ShowWhiteSpace) draw.AddText(fontCurrent, fontCurrent.FontSize * 0.5f, posScr, intColorWhitespace, "CR");
 									break;
